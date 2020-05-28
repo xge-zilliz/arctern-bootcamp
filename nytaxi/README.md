@@ -33,6 +33,8 @@ $ wget https://raw.githubusercontent.com/zilliztech/arctern-bootcamp/master/nyta
 # 下载并解压纽约市的地形数据图
 $ wget https://github.com/zilliztech/arctern-bootcamp/raw/master/nytaxi/file/taxi_zones.zip
 $ unzip taxi_zones.zip
+#下载纽约市的道路网
+wget https://github.com/zilliztech/arctern-bootcamp/raw/master/nytaxi/file/nyc_road.csv
 ```
 
 
