@@ -207,16 +207,75 @@ in_nyc_df=nyc_df[pd.Series(is_resonable)]
 in_nyc_df.fare_amount.describe()
 ```
 
+根据纽约市轮廓图对租车数据过滤后，我们发现很多上车点的位置和道路有一些偏差，甚至偏离到某些建筑物内：
+```python
+import json
+from keplergl import KeplerGl
+with open("map_config.json", "r") as f:
+    config = json.load(f)
+KeplerGl(data={"projectioned_point": pd.DataFrame(data={'projectioned_point':arctern.ST_AsText(pickup_in_nyc)})},config=config)
+```
+<img src="./pic/nyc_taxi_pickup_filted_small_zone.png">
+
+我们认为离道路较远的数据同样为噪点(默认离道路距离大于100m视为较远),通过匹配纽约市的道路网将偏离道路较远的租车数据过滤掉，首先加载纽约市道路网：
+```python
+import arctern
+nyc_road=pd.read_csv("/tmp/nyc_road.csv", dtype={"roads":"string"}, delimiter='|')
+roads=arctern.ST_GeomFromText(nyc_road.roads)
+```
+
+然后根据纽约市的道路网对上车点和下车点进行过滤：
+```python
+pickup_points = arctern.ST_Point(in_nyc_df.pickup_longitude,in_nyc_df.pickup_latitude)
+dropoff_points = arctern.ST_Point(in_nyc_df.dropoff_longitude,in_nyc_df.dropoff_latitude)
+is_pickup_near_road = arctern.near_road(roads, pickup_points)
+is_dropoff_near_road = arctern.near_road(roads, dropoff_points)
+is_resonable = [is_pickup_near_road[idx] & is_dropoff_near_road[idx] for idx in range(0,len(is_dropoff_near_road)) ]
+in_nyc_df=in_nyc_df.reset_index()
+on_road_nyc_df=in_nyc_df[pd.Series(is_resonable)]
+```
+
+过滤到距离道路较远的租车数据之后，我们将上下车点绑定到最近的道路上，生成新的上下车点：
+```python
+pickup_points = arctern.ST_Point(on_road_nyc_df.pickup_longitude,on_road_nyc_df.pickup_latitude)
+projectioned_pickup = arctern.nearest_location_on_road(roads, pickup_points)
+dropoff_points = arctern.ST_Point(on_road_nyc_df.dropoff_longitude,on_road_nyc_df.dropoff_latitude)
+projectioned_dropoff = arctern.nearest_location_on_road(roads, dropoff_points)
+```
+
+绘制出数据绑定道路后的上车点：
+```python
+import json
+from keplergl import KeplerGl
+with open("map_config.json", "r") as f:
+    config = json.load(f)
+KeplerGl(data={"projectioned_point": pd.DataFrame(data={'projectioned_point':arctern.ST_AsText(projectioned_pickup)})},config=config)
+```
+<img src="./pic/nyc_taxi_pickup_on_road.png">
+
+绘制出数据绑定道路后的下车点：
+```python
+with open("map_config.json", "r") as f:
+    config = json.load(f)
+KeplerGl(data={"projectioned_point": pd.DataFrame(data={'projectioned_point':arctern.ST_AsText(projectioned_dropoff)})},config=config)
+```
+<img src="./pic/nyc_taxi_dropoff_on_road.png">
+
+将绑路后的乘客上下车位置信息添加到dataframe near_road_df 中：
+```python
+on_road_nyc_df.insert(16,'pickup_on_road',projectioned_pickup)
+on_road_nyc_df.insert(17,'dropoff_on_road',projectioned_dropoff)
+```
+
 过滤后的数据关于行程费用的描述信息为：
 
-
-    count    192805.000000
-    mean          9.786233
-    std           7.270556
+    count    192264.000000
+    mean          9.691192
+    std           6.984912
     min           2.500000
     25%           5.700000
     50%           7.700000
-    75%          11.300000
+    75%          11.000000
     max         175.000000
     Name: fare_amount, dtype: float64
 综上我们完成了数据过滤，根据预处理的数据我们将对出租车数据进行分析。
@@ -231,11 +290,9 @@ in_nyc_df.fare_amount.describe()
 
 
 ```python
-fare_amount_gt_50 = in_nyc_df[in_nyc_df.fare_amount > 50]
-pickup_50 = arctern.ST_Point(fare_amount_gt_50.pickup_longitude,fare_amount_gt_50.pickup_latitude)
-dropoff_50 = arctern.ST_Point(fare_amount_gt_50.dropoff_longitude,fare_amount_gt_50.dropoff_latitude)
-KeplerGl(data={"pickup": pd.DataFrame(data={'pickup':arctern.ST_AsText(pickup_50)}),
-               "dropoff":pd.DataFrame(data={'dropoff':arctern.ST_AsText(dropoff_50)})
+fare_amount_gt_50 = on_road_nyc_df[on_road_nyc_df.fare_amount > 50]
+KeplerGl(data={"pickup": pd.DataFrame(data={'pickup':arctern.ST_AsText(fare_amount_gt_50.pickup_on_road)}),
+               "dropoff":pd.DataFrame(data={'dropoff':arctern.ST_AsText(fare_amount_gt_50.dropoff_on_road)})
               })
 ```
 
@@ -249,44 +306,36 @@ KeplerGl(data={"pickup": pd.DataFrame(data={'pickup':arctern.ST_AsText(pickup_50
 
 
 ```python
-nyc_distance=arctern.ST_DistanceSphere(arctern.ST_Point(in_nyc_df.pickup_longitude,
-                                                        in_nyc_df.pickup_latitude),
-                                       arctern.ST_Point(in_nyc_df.dropoff_longitude,
-                                                        in_nyc_df.dropoff_latitude))
-nyc_distance.index=in_nyc_df.index
+nyc_distance=arctern.ST_DistanceSphere(on_road_nyc_df.pickup_on_road, on_road_nyc_df.dropoff_on_road)
+nyc_distance.index=on_road_nyc_df.index
 nyc_distance.describe()
 ```
 车辆的直线距离结果描述为：
 
 
 ```
-    count    192805.000000
-    mean       3150.931171
-    std        3326.144461
+    count    191848.000000
+    mean       3113.874232
+    std        3236.740453
     min           0.000000
-    25%        1224.998626
-    50%        2088.286128
-    75%        3753.104118
-    max       35395.487197
+    25%        1223.470978
+    50%        2084.866712
+    75%        3731.926363
+    max       35418.698339
     dtype: float64
 ```
 
 获得直线距离大于 20 公里的点，并绘制所有直线距离大于 20 公里的上车点和下车点：
 
 ```python
-nyc_with_distance=pd.DataFrame({"pickup_longitude":in_nyc_df.pickup_longitude,
-                                "pickup_latitude":in_nyc_df.pickup_latitude,
-                                "dropoff_longitude":in_nyc_df.dropoff_longitude,
-                                "dropoff_latitude":in_nyc_df.dropoff_latitude,
+nyc_with_distance=pd.DataFrame({"pickup":on_road_nyc_df.pickup_on_road,
+                                "dropoff":on_road_nyc_df.dropoff_on_road,
                                 "sphere_distance":nyc_distance
                                })
 
 nyc_dist_gt = nyc_with_distance[nyc_with_distance.sphere_distance > 20e3]
-pickup_gt = arctern.ST_Point(nyc_dist_gt.pickup_longitude,nyc_dist_gt.pickup_latitude)
-dropoff_gt = arctern.ST_Point(nyc_dist_gt.dropoff_longitude,nyc_dist_gt.dropoff_latitude)
-
-KeplerGl(data={"pickup": pd.DataFrame(data={'pickup':arctern.ST_AsText(pickup_gt)}),
-               "dropoff":pd.DataFrame(data={'dropoff':arctern.ST_AsText(dropoff_gt)})
+KeplerGl(data={"pickup": pd.DataFrame(data={'pickup':arctern.ST_AsText(nyc_dist_gt.pickup)}),
+               "dropoff":pd.DataFrame(data={'dropoff':arctern.ST_AsText(nyc_dist_gt.dropoff)})
               })
 ```
 
