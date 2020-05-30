@@ -33,7 +33,6 @@ $ wget https://raw.githubusercontent.com/zilliztech/arctern-bootcamp/master/nyta
 # 下载并解压纽约市的地形数据图
 $ wget https://github.com/zilliztech/arctern-bootcamp/raw/master/nytaxi/file/taxi_zones.zip
 $ unzip -d taxi_zones taxi_zones.zip
-```
 #下载纽约市的道路网
 wget https://github.com/zilliztech/arctern-bootcamp/raw/master/nytaxi/file/nyc_road.csv
 ```
@@ -235,7 +234,6 @@ in_nyc_df.fare_amount.describe()
 根据纽约市轮廓图对租车数据过滤后，我们发现很多上车点的位置和道路有一些偏差，甚至偏离到某些建筑物内：
 ```python
 import json
-from keplergl import KeplerGl
 with open("map_config.json", "r") as f:
     config = json.load(f)
 KeplerGl(data={"projectioned_point": pd.DataFrame(data={'projectioned_point':arctern.ST_AsText(pickup_in_nyc)})},config=config)
@@ -260,28 +258,22 @@ in_nyc_df=in_nyc_df.reset_index()
 on_road_nyc_df=in_nyc_df[pd.Series(is_resonable)]
 ```
 
-过滤到距离道路较远的租车数据之后，我们将上下车点绑定到最近的道路上，生成新的上下车点：
+过滤到距离道路较远的租车数据之后，我们将上车点绑定到最近的道路上，生成新的上车点：
 ```python
 pickup_points = arctern.ST_Point(on_road_nyc_df.pickup_longitude,on_road_nyc_df.pickup_latitude)
 projectioned_pickup = arctern.nearest_location_on_road(roads, pickup_points)
-dropoff_points = arctern.ST_Point(on_road_nyc_df.dropoff_longitude,on_road_nyc_df.dropoff_latitude)
-projectioned_dropoff = arctern.nearest_location_on_road(roads, dropoff_points)
 ```
 
 绘制出数据绑定道路后的上车点：
 ```python
-import json
-from keplergl import KeplerGl
-with open("map_config.json", "r") as f:
-    config = json.load(f)
 KeplerGl(data={"projectioned_point": pd.DataFrame(data={'projectioned_point':arctern.ST_AsText(projectioned_pickup)})},config=config)
 ```
 <img src="./pic/nyc_taxi_pickup_on_road.png">
 
-绘制出数据绑定道路后的下车点：
+根据同样的方法，将乘客下车点绑定到最近的道路上，生成新的下车点：
 ```python
-with open("map_config.json", "r") as f:
-    config = json.load(f)
+dropoff_points = arctern.ST_Point(on_road_nyc_df.dropoff_longitude,on_road_nyc_df.dropoff_latitude)
+projectioned_dropoff = arctern.nearest_location_on_road(roads, dropoff_points)
 KeplerGl(data={"projectioned_point": pd.DataFrame(data={'projectioned_point':arctern.ST_AsText(projectioned_dropoff)})},config=config)
 ```
 <img src="./pic/nyc_taxi_dropoff_on_road.png">
@@ -290,6 +282,7 @@ KeplerGl(data={"projectioned_point": pd.DataFrame(data={'projectioned_point':arc
 ```python
 on_road_nyc_df.insert(16,'pickup_on_road',projectioned_pickup)
 on_road_nyc_df.insert(17,'dropoff_on_road',projectioned_dropoff)
+on_road_nyc_df.fare_amount.describe()
 ```
 
 过滤后的数据关于行程费用的描述信息为：
